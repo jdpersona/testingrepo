@@ -1,0 +1,381 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Sun Mar 24 20:09:19 2019
+
+@author: john.ekedum@ibm.com
+"""
+
+import paramiko
+import datetime
+import os, zipfile
+import re 
+import os, glob
+from collections import defaultdict
+import pandas as pd
+import numpy as np
+import csv
+
+# Open a transport
+host = "ftp.coremetrics.com"
+port = 998
+transport = paramiko.Transport((host, port))
+# Auth
+password = "-rdGiuDi"
+username = "50510000-export"
+transport.connect(username = username, password = password)
+# Go!
+sftp = paramiko.SFTPClient.from_transport(transport)
+
+# Get all relevant files in SFTP
+files = []
+for i in sftp.listdir():
+    lstatout=str(sftp.lstat(i)).split()[0]
+    if 'd' not in lstatout:
+        if 'Trigger' not in i:
+            files.append(i)
+            
+
+# Sort the files in order desc
+def sort_DDF_data( l ): 
+    convert = lambda text: int(text) if text.isdigit() else text 
+    alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key)] 
+    return sorted(l, key = alphanum_key, reverse=True)[0:2]
+
+sorted_files = []
+s = set(files) # make sure no duplicates
+for x in sort_DDF_data(s):
+    sorted_files.append(x)
+
+#Dowwnload zipped files from SFTP
+
+dir_name = '/Users/john.ekedum@ibm.com/Downloads/DDF/'
+for file in sorted_files:
+    filepath = file
+    localpath = dir_name + file  # this is where sftp stores the file
+    sftp.get(filepath, localpath)
+    print(file + ' '+ 'downloaded')
+
+
+# Unzip Zpped files
+# dir_name = '/Users/john.ekedum@ibm.com/Downloads/DDF/'
+
+extension = ".zip"
+os.chdir(dir_name) # change directory from working dir to dir with files
+
+for item in os.listdir(dir_name):# loop through items in dir
+    if item.endswith(".zip"): # check for ".zip" extension
+        file_name = os.path.abspath(dir_name + item) # get full path of files
+        zip_ref = zipfile.ZipFile(file_name) # create zipfile object
+        zip_ref.extractall(dir_name + item[0:29]) # extract file to dir
+        zip_ref.close() # close file
+        os.remove(file_name) # delete zipped file
+   
+
+     
+
+# loop through file names in directory and  stack them together according filenames 
+# dir_name1 = '/Users/john.ekedum@ibm.com/Downloads/DDF/'
+list_of_dir=[]
+for item in os.listdir(dir_name):
+    list_of_dir.append(dir_name + item)
+    
+    
+
+unique_files = defaultdict(list)
+for file_pattrn in ['Element.txt', 'Geography.txt', 'PageView.txt', 'ConversionEvent.txt', 'TechnicalProperties.txt', 'Registration.txt']:
+    for d in list_of_dir:
+        for i in glob.iglob(os.path.join(d, file_pattrn)):
+            unique_files[os.path.basename(i)].append(i)
+            
+for unique_filename, copies in unique_files.items():
+    with open(os.path.join(dir_name, unique_filename), 'w') as f:
+        for copy in copies:
+            with open(copy, 'r') as cp:
+                for line in cp:
+                    f.write(line)
+
+
+
+##### Data cleaning
+                
+my_files = []
+os.listdir(dir_name)
+import os
+for all_file in os.listdir(dir_name):
+    if all_file.endswith(".txt"):
+        my_files.append(os.path.join(dir_name, all_file))
+
+
+dataframes = []
+for filename in my_files:
+    dataframes.append(pd.read_csv(filename))   
+    
+
+df_tech, df_elem, df_reg, df_conv, PageView = dataframes[0], dataframes[1],dataframes[2],dataframes[3], dataframes[4]
+
+
+
+
+
+
+#df_tech
+mask = df_tech.TIMESTAMP  == 'TIMESTAMP'
+df_tech = df_tech.loc[~mask,::]
+df_tech.columns = df_tech.columns.str.replace(' ','_')
+df_tech.drop_duplicates(inplace=True)
+#df_tech.to_csv(os.path.join(dir_name,r'df_techProperties.csv'), index=False)
+
+
+
+#pageview
+mask = PageView.TIMESTAMP  == 'TIMESTAMP'
+PageView = PageView.loc[~mask,::]
+PageView.columns = PageView.columns.str.replace(' ','_')
+
+
+#pageview
+mask = PageView.TIMESTAMP  == 'TIMESTAMP'
+PageView = PageView.loc[~mask,::]
+PageView.columns = PageView.columns.str.upper().str.replace(' ','_')
+PageView.rename(columns={'REMEMBER_ID_&_USER':'REMEMBER_ID__USER'}, inplace=True)
+PageView = PageView[['SESSION_ID','COOKIE_ID','TIMESTAMP','PAGE','PAGE_ID','CONTENT_CATEGORY','CONTENT_CATEGORY_ID',
+
+         'CONTENT_CATEGORY_TOP','CONTENT_CATEGORY_BOTTOM','ON_SITE_SEARCH_TERM','PAGE_URL',
+
+         'PAGE_REFERRAL_URL','SITE_ID','CID','USER_NAME','REMEMBER_ID__USER','LOCALE_SELECTION',
+
+         'DATA_CENTER','COMPANY_NAME','EMAIL','ENVIRONMENT','SEARCH_RESULT_COUNT']]
+mask = PageView.SITE_ID != 'WCA'
+pageview_others = PageView[mask]
+pageview_wca = PageView[~mask]
+
+
+
+
+def page_url_parser(row):
+    page = row["PAGE_URL"]    
+
+    if 'cuiOverrideSrc' in row["PAGE_URL"]:
+
+        page = page.split('cuiOverrideSrc=')[1]
+
+    page = page.split("/",3)[-1]
+
+        
+
+    if "ux/" in page: 
+
+        if 'newMailing' in page: 
+
+            page = 'ux/newMailing'
+
+        else: 
+
+            page=re.split(r'[0-9]', page)[0].split('&')[0]
+
+    else: 
+
+        page = page.split("?")[0].split("#")[0].split(";")[0]
+
+        if "user/" in page and ".action" in page: 
+
+            if "/listbyorg" in page:
+
+                page = "user/listbyor g.action"
+
+            elif "/new." in page:
+
+                page = "user/new.action"
+
+            else: 
+
+                page = "user.action"
+
+    if page[0] == '/':
+
+        page = page[1:]
+
+    if page[-1] == '/':
+
+        page = page[:-1]
+
+    return page
+
+pageview_wca["parsed_page"] = pageview_wca.apply(lambda x: page_url_parser(x), axis = 1)
+#pageview_wca.to_csv(os.path.join(dir_name,r'PageView_wca.csv'),index=False)
+#Pageview_others.to_csv(os.path.join(dir_name,r'PageView_others.csv'),index=False)
+
+#element, conversion and techproperties and registration pre-processing
+
+def process_elem_conv(data):
+    if data.TIMESTAMP.any():
+        mask = data.TIMESTAMP == 'TIMESTAMP'        
+        data = data.loc[~mask,::]
+        data.TIMESTAMP = pd.to_datetime(data.TIMESTAMP)
+        data.columns = data.columns.str.replace(' ','_')
+        data.drop_duplicates(inplace=True) 
+        return data
+        #data.to_csv(os.path.join(dir_name, data.columns.str.split('_')[30][0] +  ".csv"),index=False )                   
+
+
+    
+def process_reg(data):
+    mask = data.LAST_UPDATE_DATE  == 'LAST_UPDATE_DATE'
+    data = data.loc[~mask,::]
+    data.columns = data.columns.str.title().str.replace(' ','_')
+    data.drop_duplicates(inplace=True)
+    return data
+    #data.to_csv(os.path.join(dir_name, data.columns.str.split('_')[30][0] +  ".csv"),index=False )
+    
+df_elem = process_elem_conv(df_elem)
+df_conv = process_elem_conv(df_conv)
+df_reg = process_reg(df_reg)   
+
+
+# Geography
+
+
+# Add a Date column to the table
+
+filename = []
+
+for f in sorted(sorted_files, reverse=False):
+
+    filename.append('/Users/john.ekedum@ibm.com/Downloads/DDF/' + f[0:29] + '/Geography.txt')
+
+import csv
+
+for names in filename:
+
+    with open(names,'r') as csvinput:
+
+        with open('/Users/john.ekedum@ibm.com/Downloads/GEO/' + names[42 :70] + '_geo'+ '.csv', 'w') as csvoutput:
+
+            writer = csv.writer(csvoutput, lineterminator='\n')
+
+            reader = csv.reader(csvinput)
+
+            all = []
+
+            row = next(reader)
+
+            row.append('Date')
+
+            all.append(row)
+
+            for row in reader:
+
+                row.append(names[62:70])
+
+                all.append(row)
+        
+
+            writer.writerows(all)
+
+
+#clean directory
+dir_name2 = '/Users/john.ekedum@ibm.com/Downloads/GEO'
+file_geo = os.listdir(dir_name2)
+file_geo.remove('.DS_Store')
+file_geo = sorted(file_geo, reverse=False)
+
+#Stack together geography table
+fout=open("/Users/john.ekedum@ibm.com/Downloads/GEO/final.csv","a") #output file
+# first file:
+for lines in open("/Users/john.ekedum@ibm.com/Downloads/GEO/" + file_geo[0]):
+    fout.write(lines)
+# now the rest:    
+for num in filename[1::]:
+    f = open("/Users/john.ekedum@ibm.com/Downloads/GEO/" + num[42:70] + "_geo.csv")
+    f.__next__()# skip the header
+    for lines in f:
+         fout.write(lines)
+    f.close() # not really needed
+fout.close()
+
+
+# clean Geography data and save as CSV
+df_geo = pd.read_csv("/Users/john.ekedum@ibm.com/Downloads/GEO/final.csv")
+df_geo.columns = df_geo.columns.str.replace(' ','_')
+df_geo.Date = df_geo.Date.astype('str')
+df_geo.Date = df_geo.Date.str.slice(0,4) + "-" + df_geo.Date.str.slice(4,6) + "-" + df_geo.Date.str.slice(6,8)
+
+
+mask = df_geo.Date == 'Date--'
+df_geo = df_geo.loc[~mask,::]
+df_geo.Date = pd.to_datetime(df_geo.Date)
+df_geo.drop_duplicates(inplace=True)
+
+
+
+
+
+
+
+## Move files into COS
+import ibm_boto3
+from ibm_botocore.client import Config
+
+cos_credentials = {
+  "apikey": "qDwK6ixNiM_jagIbGAG1gRYDY4n_tCDBP4Vcc90sX43o",
+  
+  "endpoints": "https://control.cloud-object-storage.cloud.ibm.com/v2/endpoints",
+  
+  "iam_apikey_description": "Auto generated apikey during resource-key operation for Instance - crn:v1:bluemix:public:cloud-object-storage:global:a/2f12c67ccc80fc3508f498abb51d3a77:d6b4edb4-35a1-4632-9cf0-5b6b193270fa::",
+  "iam_apikey_name": "auto-generated-apikey-e58851cd-4981-45ae-85a8-688afb16cfd3",
+  "iam_role_crn": "crn:v1:bluemix:public:iam::::serviceRole:Writer",
+  "iam_serviceid_crn": "crn:v1:bluemix:public:iam-identity::a/2f12c67ccc80fc3508f498abb51d3a77::serviceid:ServiceId-0534cd31-dec8-44d4-9a3e-1db6226e2adc",
+  "resource_instance_id": "crn:v1:bluemix:public:cloud-object-storage:global:a/2f12c67ccc80fc3508f498abb51d3a77:d6b4edb4-35a1-4632-9cf0-5b6b193270fa::"
+  
+}
+
+
+
+COS_API_KEY_ID = cos_credentials['apikey']
+COS_RESOURCE_CRN = cos_credentials['resource_instance_id']
+COS_AUTH_ENDPOINT = "https://iam.cloud.ibm.com/oidc/token"
+COS_ENDPOINT = "https://s3.us-east.cloud-object-storage.appdomain.cloud"
+
+
+cos = ibm_boto3.resource("s3",
+
+                        ibm_api_key_id=COS_API_KEY_ID,
+
+                        ibm_service_instance_id=COS_RESOURCE_CRN,
+
+                        ibm_auth_endpoint=COS_AUTH_ENDPOINT,
+
+                        config=Config(signature_version="oauth"),
+
+                        endpoint_url=COS_ENDPOINT
+
+                        )
+
+
+ddf_data = ['df_tech', 'df_elem', 'df_reg', 'df_conv', 'PageView']
+def save_data(data):
+    for d in ddf_data:
+        data.to_csv(os.path.join(dir_name, d  +  ".csv"),index=False )
+    
+save_data(df_tech)
+save_data(df_elem)
+save_data(df_reg)
+save_data(df_conv)
+save_data(pageiew_wca)
+save_data(pageiew_others)
+
+
+path =[]
+for i in os.listdir():
+    if 'csv' in i:
+        full_path = os.path.join(dir_name,i)
+        cos.Object('ddf-staging-abcxyz123', full_path[41::]).upload_file(full_path)
+        
+
+
+        
+        
+        
+        
+        
