@@ -2,8 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 Created on Sun Mar 24 20:09:19 2019
-
-@author: john.ekedum@ibm.com
 """
 
 import paramiko
@@ -17,12 +15,12 @@ import numpy as np
 import csv
 
 # Open a transport
-host = "ftp.coremetrics.com"
-port = 998
+host = "****"
+port = ***
 transport = paramiko.Transport((host, port))
 # Auth
-password = "-rdGiuDi"
-username = "50510000-export"
+password = "*******"
+username = "*********"
 transport.connect(username = username, password = password)
 # Go!
 sftp = paramiko.SFTPClient.from_transport(transport)
@@ -49,7 +47,7 @@ for x in sort_DDF_data(s):
 
 #Dowwnload zipped files from SFTP
 
-dir_name = '/Users/john.ekedum@ibm.com/Downloads/DDF/'
+dir_name = 'file_path'
 for file in sorted_files:
     filepath = file
     localpath = dir_name + file  # this is where sftp stores the file
@@ -242,7 +240,7 @@ filename = []
 
 for f in sorted(sorted_files, reverse=False):
 
-    filename.append('/Users/john.ekedum@ibm.com/Downloads/DDF/' + f[0:29] + '/Geography.txt')
+    filename.append('filepath' + f[0:29] + '/Geography.txt')
 
 import csv
 
@@ -275,19 +273,19 @@ for names in filename:
 
 
 #clean directory
-dir_name2 = '/Users/john.ekedum@ibm.com/Downloads/GEO'
+dir_name2 = 'geo_file_path'
 file_geo = os.listdir(dir_name2)
 file_geo.remove('.DS_Store')
 file_geo = sorted(file_geo, reverse=False)
 
 #Stack together geography table
-fout=open("/Users/john.ekedum@ibm.com/Downloads/GEO/final.csv","a") #output file
+fout=open("geo_file_path/final.csv","a") #output file
 # first file:
-for lines in open("/Users/john.ekedum@ibm.com/Downloads/GEO/" + file_geo[0]):
+for lines in open('geo_file_path' + file_geo[0]):
     fout.write(lines)
 # now the rest:    
 for num in filename[1::]:
-    f = open("/Users/john.ekedum@ibm.com/Downloads/GEO/" + num[42:70] + "_geo.csv")
+    f = open('geo_file_path' + num[42:70] + "_geo.csv")
     f.__next__()# skip the header
     for lines in f:
          fout.write(lines)
@@ -296,7 +294,7 @@ fout.close()
 
 
 # clean Geography data and save as CSV
-df_geo = pd.read_csv("/Users/john.ekedum@ibm.com/Downloads/GEO/final.csv")
+df_geo = pd.read_csv("geo_file_path/final.csv")
 df_geo.columns = df_geo.columns.str.replace(' ','_')
 df_geo.Date = df_geo.Date.astype('str')
 df_geo.Date = df_geo.Date.str.slice(0,4) + "-" + df_geo.Date.str.slice(4,6) + "-" + df_geo.Date.str.slice(6,8)
@@ -313,65 +311,6 @@ df_geo.drop_duplicates(inplace=True)
 
 
 
-## Move files into COS
-import ibm_boto3
-from ibm_botocore.client import Config
-
-cos_credentials = {
-  "apikey": "qDwK6ixNiM_jagIbGAG1gRYDY4n_tCDBP4Vcc90sX43o",
-  
-  "endpoints": "https://control.cloud-object-storage.cloud.ibm.com/v2/endpoints",
-  
-  "iam_apikey_description": "Auto generated apikey during resource-key operation for Instance - crn:v1:bluemix:public:cloud-object-storage:global:a/2f12c67ccc80fc3508f498abb51d3a77:d6b4edb4-35a1-4632-9cf0-5b6b193270fa::",
-  "iam_apikey_name": "auto-generated-apikey-e58851cd-4981-45ae-85a8-688afb16cfd3",
-  "iam_role_crn": "crn:v1:bluemix:public:iam::::serviceRole:Writer",
-  "iam_serviceid_crn": "crn:v1:bluemix:public:iam-identity::a/2f12c67ccc80fc3508f498abb51d3a77::serviceid:ServiceId-0534cd31-dec8-44d4-9a3e-1db6226e2adc",
-  "resource_instance_id": "crn:v1:bluemix:public:cloud-object-storage:global:a/2f12c67ccc80fc3508f498abb51d3a77:d6b4edb4-35a1-4632-9cf0-5b6b193270fa::"
-  
-}
-
-
-
-COS_API_KEY_ID = cos_credentials['apikey']
-COS_RESOURCE_CRN = cos_credentials['resource_instance_id']
-COS_AUTH_ENDPOINT = "https://iam.cloud.ibm.com/oidc/token"
-COS_ENDPOINT = "https://s3.us-east.cloud-object-storage.appdomain.cloud"
-
-
-cos = ibm_boto3.resource("s3",
-
-                        ibm_api_key_id=COS_API_KEY_ID,
-
-                        ibm_service_instance_id=COS_RESOURCE_CRN,
-
-                        ibm_auth_endpoint=COS_AUTH_ENDPOINT,
-
-                        config=Config(signature_version="oauth"),
-
-                        endpoint_url=COS_ENDPOINT
-
-                        )
-
-
-ddf_data = ['df_tech', 'df_elem', 'df_reg', 'df_conv', 'PageView']
-def save_data(data):
-    for d in ddf_data:
-        data.to_csv(os.path.join(dir_name, d  +  ".csv"),index=False )
-    
-save_data(df_tech)
-save_data(df_elem)
-save_data(df_reg)
-save_data(df_conv)
-save_data(pageiew_wca)
-save_data(pageiew_others)
-
-
-path =[]
-for i in os.listdir():
-    if 'csv' in i:
-        full_path = os.path.join(dir_name,i)
-        cos.Object('ddf-staging-abcxyz123', full_path[41::]).upload_file(full_path)
-        
 
 
         
